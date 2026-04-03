@@ -10,89 +10,37 @@ app.get('/', async (req, res) => {
     const feedUrl = 'https://us12.campaign-archive.com/feed?u=c9cf3b120a074246030a6f683&id=5b2b2c14d8';
     const feed = await parser.parseURL(feedUrl);
 
-    let html = `
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .newsletter-item { margin-bottom: 40px; border-bottom: 2px solid #ccc; padding-bottom: 40px; }
-        .newsletter-item h2 { color: #333; }
-        .newsletter-item .date { color: #666; font-size: 14px; }
-        .newsletter-content img { max-width: 100% !important; height: auto !important; }
-        .newsletter-content a.mcnButton {
-          display: inline-block;
-          padding: 10px 20px;
-          background-color: #007bff;
-          color: #ffffff !important;
-          text-decoration: none;
-          border-radius: 4px;
-          font-weight: bold;
-        }
-      </style>
-    </head>
-    <body>`;
+    // Just grab the first newsletter
+    const item = feed.items[0];
+    const response = await axios.get(item.link, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      maxRedirects: 5
+    });
 
-    const max = 10;
-    const items = feed.items.slice(0, max);
+    const $ = cheerio.load(response.data);
 
-    for (const item of items) {
-      let content = '';
-      try {
-        const response = await axios.get(item.link, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          maxRedirects: 5
-        });
+    // List all top-level IDs and classes so we can find the right containers
+    let debug = '<h2>Debug: Top-level element IDs and classes</h2><ul>';
+    $('body > *').each(function () {
+      const id = $(this).attr('id') || 'no-id';
+      const cls = $(this).attr('class') || 'no-class';
+      const tag = $(this).prop('tagName');
+      debug += `<li><strong>${tag}</strong> | id="${id}" | class="${cls}"</li>`;
+    });
+    debug += '</ul>';
 
-        const $ = cheerio.load(response.data);
+    // Also list all elements with IDs
+    debug += '<h2>All elements with IDs</h2><ul>';
+    $('[id]').each(function () {
+      const id = $(this).attr('id');
+      const tag = $(this).prop('tagName');
+      debug += `<li><strong>${tag}</strong> | id="${id}"</li>`;
+    });
+    debug += '</ul>';
 
-        // Extract inline styles from the original page
-        let styles = '';
-        $('style').each(function () {
-          styles += $(this).html();
-        });
-
-        // Only grab the email content container
-        const emailContent = $('#templateBody').html()
-          || $('#bodyContent').html()
-          || $('#templateContainer').html()
-          || $('.templateContainer').html()
-          || $('table.body').html();
-
-        if (emailContent) {
-          content = '<style>' + styles + '</style>' + emailContent;
-        } else {
-          // Fallback: grab body but strip known Mailchimp UI
-          $('script, noscript').remove();
-          $('[id*="awesomewrap"]').remove();
-          $('[id*="archive"]').remove();
-          $('[class*="archive"]').remove();
-          $('[id*="translate"]').remove();
-          $('[class*="translate"]').remove();
-          $('[id*="banner"]').remove();
-          $('[class*="banner"]').remove();
-          content = '<style>' + styles + '</style>' + $('body').html();
-        }
-
-      } catch (err) {
-        content = '<p>Unable to load content. <a href="' + item.link + '">View online</a></p>';
-      }
-
-      const date = new Date(item.pubDate).toLocaleDateString('en-US', {
-        year: 'numeric', month: 'long', day: 'numeric'
-      });
-
-      html += `
-        <div class="newsletter-item">
-          <h2>${item.title}</h2>
-          <p class="date">${date}</p>
-          <div class="newsletter-content">${content}</div>
-        </div>`;
-    }
-
-    html += '</body></html>';
-    res.send(html);
+    res.send(debug);
   } catch (err) {
-    res.send('Unable to load newsletter feed.');
+    res.send('Error: ' + err.message);
   }
 });
 
