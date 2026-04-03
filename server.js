@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const Parser = require('rss-parser');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const parser = new Parser();
 
 app.get('/', async (req, res) => {
@@ -17,7 +18,16 @@ app.get('/', async (req, res) => {
         .newsletter-item { margin-bottom: 40px; border-bottom: 2px solid #ccc; padding-bottom: 40px; }
         .newsletter-item h2 { color: #333; }
         .newsletter-item .date { color: #666; font-size: 14px; }
-        img { max-width: 100% !important; height: auto !important; }
+        .newsletter-content img { max-width: 100% !important; height: auto !important; }
+        .newsletter-content a.mcnButton {
+          display: inline-block;
+          padding: 10px 20px;
+          background-color: #007bff;
+          color: #ffffff !important;
+          text-decoration: none;
+          border-radius: 4px;
+          font-weight: bold;
+        }
       </style>
     </head>
     <body>`;
@@ -32,8 +42,37 @@ app.get('/', async (req, res) => {
           headers: { 'User-Agent': 'Mozilla/5.0' },
           maxRedirects: 5
         });
-        const bodyMatch = response.data.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        content = bodyMatch ? bodyMatch[1] : response.data;
+
+        const $ = cheerio.load(response.data);
+
+        // Extract inline styles from the original page
+        let styles = '';
+        $('style').each(function () {
+          styles += $(this).html();
+        });
+
+        // Only grab the email content container
+        const emailContent = $('#templateBody').html()
+          || $('#bodyContent').html()
+          || $('#templateContainer').html()
+          || $('.templateContainer').html()
+          || $('table.body').html();
+
+        if (emailContent) {
+          content = '<style>' + styles + '</style>' + emailContent;
+        } else {
+          // Fallback: grab body but strip known Mailchimp UI
+          $('script, noscript').remove();
+          $('[id*="awesomewrap"]').remove();
+          $('[id*="archive"]').remove();
+          $('[class*="archive"]').remove();
+          $('[id*="translate"]').remove();
+          $('[class*="translate"]').remove();
+          $('[id*="banner"]').remove();
+          $('[class*="banner"]').remove();
+          content = '<style>' + styles + '</style>' + $('body').html();
+        }
+
       } catch (err) {
         content = '<p>Unable to load content. <a href="' + item.link + '">View online</a></p>';
       }
